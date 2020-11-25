@@ -1,0 +1,91 @@
+@base <http://example.org/vg/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix vg: <http://biohackathon.org/resource/vg#> .
+@prefix node: <http://example.org/vg/node/> .
+@prefix faldo: <http://biohackathon.org/resource/faldo#> .
+node:1 a vg:Node;
+rdf:value "caaataag" .
+node:2 a vg:Node;
+rdf:value "a" .
+node:3 a vg:Node;
+rdf:value "g" .
+node:4 a vg:Node;
+rdf:value "t" .
+node:5 a vg:Node;
+rdf:value "c" .
+node:6 a vg:Node;
+rdf:value "ttg" .
+node:7 a vg:Node;
+rdf:value "a" .
+node:8 a vg:Node;
+rdf:value "g" .
+node:9 a vg:Node;
+rdf:value "aaattttctggagttctat" .
+node:10 a vg:Node;
+rdf:value "a" .
+node:11 a vg:Node;
+rdf:value "t" .
+node:12 a vg:Node;
+rdf:value "atat" .
+node:13 a vg:Node;
+rdf:value "a" .
+node:14 a vg:Node;
+rdf:value "t" .
+node:15 a vg:Node;
+rdf:value "ccaactctctg" .
+<path/x> a vg:Path .
+@prefix path0: <http://example.org/vg/path/x/step/> .
+path0:0 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 0;
+vg:node node:1 .
+path0:1 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 1;
+vg:node node:3 .
+path0:2 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 2;
+vg:node node:5 .
+path0:3 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 3;
+vg:node node:6 .
+path0:4 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 4;
+vg:node node:8 .
+path0:5 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 5;
+vg:node node:9 .
+path0:6 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 6;
+vg:node node:11 .
+path0:7 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 7;
+vg:node node:12 .
+path0:8 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 8;
+vg:node node:14 .
+path0:9 a vg:Step,faldo:Region;
+vg:path <path/x>;
+vg:rank 9;
+vg:node node:15 .
+node:1 vg:linksForwardToForward node:2,node:3 .
+node:2 vg:linksForwardToForward node:4,node:5 .
+node:3 vg:linksForwardToForward node:4,node:5 .
+node:4 vg:linksForwardToForward node:6 .
+node:5 vg:linksForwardToForward node:6 .
+node:6 vg:linksForwardToForward node:7,node:8 .
+node:7 vg:linksForwardToForward node:9 .
+node:8 vg:linksForwardToForward node:9 .
+node:9 vg:linksForwardToForward node:10,node:11 .
+node:10 vg:linksForwardToForward node:12 .
+node:11 vg:linksForwardToForward node:12 .
+node:12 vg:linksForwardToForward node:13,node:14 .
+node:13 vg:linksForwardToForward node:15 .
+node:14 vg:linksForwardToForward node:15 .

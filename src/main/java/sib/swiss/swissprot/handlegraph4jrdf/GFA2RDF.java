@@ -22,6 +22,8 @@ import java.nio.file.Files;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
 import java.util.stream.Stream;
+import org.eclipse.collections.impl.map.mutable.primitive.IntIntHashMap;
+import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.common.net.ParsedIRI;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -43,11 +45,13 @@ import picocli.CommandLine.Command;
  *
  * @author Jerven Bolleman <jerven.bolleman@sib.swiss>
  */
-@Command(name = "gfa2rdf", mixinStandardHelpOptions = true, version = "gfa2rdf 0.0.1",
-        description = "Prints the checksum (MD5 by default) of a file to STDOUT.")
+@Command(name = "gfa1toRdf", mixinStandardHelpOptions = true, version = "gfa1tot2rdf 0.0.1",
+        description = "Prints the equivalent RDF for a GFA1 file")
 public class GFA2RDF implements Callable<Integer> {
 
     private static final ValueFactory VF = SimpleValueFactory.getInstance();
+    private final IntIntHashMap nodeLengthMapByIntId = new IntIntHashMap();
+    private final ObjectIntHashMap<String> nodeLengthMapByByteArrayId = new ObjectIntHashMap<>();
 
     @Parameters(index = "0", description = "The GFA file to translate to RDF")
     private File inputFile;
@@ -58,17 +62,17 @@ public class GFA2RDF implements Callable<Integer> {
     @Option(names = {"-b", "--base"}, description = "Base IRI of this graph")
     private String base = "http://example.org/vg/";
 
-    @Option(names = "-s", description = "try to generate shorter text, and leave out inferable triples")
+    @Option(names = {"-s", "--short"}, description = "try to generate shorter text, and leave out inferable triples")
     boolean preCompress;
 
-    @Option(names = "-e", description = "try to all triples possible")
+    @Option(names = {"-e", "--extra"}, description = "try to all triples possible")
     boolean extra;
 
     @Override
     public Integer call() throws Exception { // your business logic goes here...
         ParsedIRI baseIRI = new ParsedIRI(base);
-        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(outputFile))) {
-            try (Stream<String> s = Files.lines(inputFile.toPath(), StandardCharsets.US_ASCII)) {
+        try ( OutputStream out = new BufferedOutputStream(new FileOutputStream(outputFile))) {
+            try ( Stream<String> s = Files.lines(inputFile.toPath(), StandardCharsets.US_ASCII)) {
                 writeConvertedToOutputStream(out, baseIRI, s);
             }
         }
@@ -95,20 +99,22 @@ public class GFA2RDF implements Callable<Integer> {
             tw.handleNamespace("sr", VG.rank.stringValue());
             tw.handleNamespace("sn", VG.node.stringValue());
             tw.handleNamespace("f", FALDO.NAMESPACE);
+            tw.handleNamespace("fep", FALDO.ExactPosition.stringValue());
+            tw.handleNamespace("p", FALDO.position.stringValue());
         } else {
             tw.handleNamespace(RDF.PREFIX, RDF.NAMESPACE);
             tw.handleNamespace(VG.PREFIX, VG.NAMESPACE);
             tw.handleNamespace("node", base + "node/");
             tw.handleNamespace(FALDO.PREFIX, FALDO.NAMESPACE);
         }
-        int pathCounter = 0;
         Iterator<String> si = s.iterator();
-        convert(si, pathCounter, tw);
+        convert(si, tw);
 
         tw.endRDF();
     }
 
-    public void convert(Iterator<String> si, int pathCounter, TurtleWriter tw) {
+    public void convert(Iterator<String> si, TurtleWriter tw) {
+        int pathCounter = 0;
         GFA1Reader gfA1Reader = new GFA1Reader(si);
         while (gfA1Reader.hasNext()) {
             Line line = gfA1Reader.next();
@@ -116,7 +122,7 @@ public class GFA2RDF implements Callable<Integer> {
         }
     }
 
-    public static void main(String args) {
+    public static void main(String[] args) {
         int exitCode = new CommandLine(new GFA2RDF()).execute(args);
         System.exit(exitCode);
 
@@ -137,45 +143,102 @@ public class GFA2RDF implements Callable<Integer> {
         }
     }
 
-    private int convertPathLineToRdf(PathLine pathLine, RDFWriter tw, int pathCounter, boolean preCompress) {
+    private int convertPathLineToRdf(PathLine pathLine, RDFWriter writer, int pathCounter, boolean preCompress) {
         String nameAsString = pathLine.getNameAsString();
         IRI pathIRI;
+        String pathName = Integer.toString(pathCounter);
         if (nameAsString.startsWith("http://") || nameAsString.startsWith("ftp://") || nameAsString.startsWith("https://")) {
             pathIRI = VF.createIRI(nameAsString);
         } else {
             pathIRI = VF.createIRI(base + "path/", nameAsString);
+            pathName = nameAsString;
         }
-        tw.handleStatement(VF.createStatement(pathIRI, RDF.TYPE, VG.Path));
-        String pathBase = pathIRI.stringValue() + "/step/";
-        if (preCompress) {
-            tw.handleNamespace("p" + pathCounter, pathBase);
-            tw.handleNamespace("pn" + pathCounter, pathIRI.stringValue());
-        } else {
-            tw.handleNamespace("path" + pathCounter, pathBase);
-        }
+
+        String pathStepBase = pathIRI.stringValue() + "/step/";
+        String pathPositionBase = pathIRI.stringValue() + "/position/";
+        setPathNamespaces(preCompress, writer, pathName, pathStepBase, pathIRI, pathPositionBase);
+        writer.handleStatement(VF.createStatement(pathIRI, RDF.TYPE, VG.Path));
         Iterator<Step> steps = pathLine.steps();
+        int begin = 1; // We start at position 1.
         while (steps.hasNext()) {
             Step step = steps.next();
-            long rank = step.rank();
-            IRI stepIRI = VF.createIRI(pathBase, Long.toString(rank));
-            if (!preCompress) {
-                tw.handleStatement(VF.createStatement(stepIRI, RDF.TYPE, VG.Step));
-                tw.handleStatement(VF.createStatement(stepIRI, RDF.TYPE, FALDO.Region));
-            }
-            tw.handleStatement(VF.createStatement(stepIRI, VG.path, pathIRI));
-            if (rank < Integer.MAX_VALUE) {
-                tw.handleStatement(VF.createStatement(stepIRI, VG.rank, VF.createLiteral((int) rank)));
-            } else {
-                tw.handleStatement(VF.createStatement(stepIRI, VG.rank, VF.createLiteral(rank)));
-            }
-            tw.handleStatement(VF.createStatement(stepIRI, VG.node, createNodeId(new String(step.nodeId(), US_ASCII))));
+            writeStep(step, pathStepBase, preCompress, writer, pathIRI, begin, pathPositionBase);
+        }
+        if (writer instanceof PrefixedURITurtleWriter) {
+            PrefixedURITurtleWriter tw = (PrefixedURITurtleWriter) writer;
+            tw.unsetNamespace(pathIRI.stringValue());
+            tw.unsetNamespace(pathStepBase);
+            tw.unsetNamespace(pathPositionBase);
         }
         return pathCounter++;
     }
 
+    void setPathNamespaces(boolean preCompress1, RDFWriter tw, String pathName, String pathStepBase, IRI pathIRI, String pathPositionBase) throws RDFHandlerException {
+        if (preCompress1) {
+            tw.handleNamespace("pn" + pathName, pathIRI.stringValue());
+            tw.handleNamespace("ps" + pathName, pathStepBase);
+            if (extra) {
+                tw.handleNamespace("pp" + pathName, pathPositionBase);
+            }
+        } else {
+            tw.handleNamespace("path" + pathName, pathStepBase);
+            if (extra) {
+                tw.handleNamespace("pathposition" + pathName, pathPositionBase);
+            }
+        }
+    }
+
+    void writeStep(Step step, String pathStepBase, boolean preCompress1, RDFWriter tw, IRI pathIRI, int begin, String pathPositionBase) throws RDFHandlerException {
+        long rank = step.rank();
+        IRI stepIRI = VF.createIRI(pathStepBase, Long.toString(rank));
+        if (!preCompress1) {
+            tw.handleStatement(VF.createStatement(stepIRI, RDF.TYPE, VG.Step));
+            tw.handleStatement(VF.createStatement(stepIRI, RDF.TYPE, FALDO.Region));
+        }
+        tw.handleStatement(VF.createStatement(stepIRI, VG.path, pathIRI));
+        if (rank < Integer.MAX_VALUE) {
+            tw.handleStatement(VF.createStatement(stepIRI, VG.rank, VF.createLiteral((int) rank)));
+        } else {
+            tw.handleStatement(VF.createStatement(stepIRI, VG.rank, VF.createLiteral(rank)));
+        }
+        tw.handleStatement(VF.createStatement(stepIRI, VG.node, createNodeId(new String(step.nodeId(), US_ASCII))));
+        if (extra) {
+            int end = writePositions(begin, step, pathPositionBase, tw, stepIRI, preCompress1);
+            begin = end;
+        }
+    }
+
+    int writePositions(int begin, Step step, String pathPositionBase, RDFWriter tw, IRI stepIRI, boolean preCompress1) throws RDFHandlerException {
+        int end = begin + getNodeLengthOfStep(step);
+        IRI beginIri = VF.createIRI(pathPositionBase, String.valueOf(begin));
+        IRI endIri = VF.createIRI(pathPositionBase, String.valueOf(end));
+        tw.handleStatement(VF.createStatement(stepIRI, FALDO.begin, beginIri));
+        tw.handleStatement(VF.createStatement(stepIRI, FALDO.end, endIri));
+        if (!preCompress1) {
+            tw.handleStatement(VF.createStatement(beginIri, RDF.TYPE, FALDO.Position));
+        }
+        tw.handleStatement(VF.createStatement(beginIri, RDF.TYPE, FALDO.ExactPosition));
+        tw.handleStatement(VF.createStatement(beginIri, FALDO.position, VF.createLiteral(begin)));
+        if (!preCompress1) {
+            tw.handleStatement(VF.createStatement(endIri, RDF.TYPE, FALDO.Position));
+        }
+        tw.handleStatement(VF.createStatement(endIri, RDF.TYPE, FALDO.ExactPosition));
+        tw.handleStatement(VF.createStatement(endIri, FALDO.position, VF.createLiteral(end)));
+        return end;
+    }
+
     private void convertSegmentLineToRdf(SegmentLine segmentLine, RDFWriter tw) {
-        IRI nodeIRI = VF.createIRI(base + "node/", segmentLine.getNameAsString());
+        String name = segmentLine.getNameAsString();
+        IRI nodeIRI = VF.createIRI(base + "node/", name);
         tw.handleStatement(VF.createStatement(nodeIRI, RDF.TYPE, VG.Node));
+        if (extra) {
+            try {
+                int id = Integer.parseInt(name);
+                nodeLengthMapByIntId.put(id, segmentLine.getSequence().length());
+            } catch (NumberFormatException e) {
+                nodeLengthMapByByteArrayId.put(name, segmentLine.getSequence().length());
+            }
+        }
         tw.handleStatement(VF.createStatement(nodeIRI, RDF.VALUE, VF.createLiteral(segmentLine.getSequence().asString())));
     }
 
@@ -201,6 +264,15 @@ public class GFA2RDF implements Callable<Integer> {
         return VF.createIRI(base + "node/", nodeId);
     }
 
+    private int getNodeLengthOfStep(Step step) {
+        if (step.nodeHasIntId()) {
+            return nodeLengthMapByIntId.get(step.nodeIntId());
+        } else {
+            return nodeLengthMapByByteArrayId.get(step.nodeId());
+        }
+
+    }
+
     private class PrefixedURITurtleWriter extends TurtleWriter {
 
         public PrefixedURITurtleWriter(OutputStream out, ParsedIRI piri) {
@@ -223,15 +295,24 @@ public class GFA2RDF implements Callable<Integer> {
         protected void writeLiteral(Literal res) throws IOException {
             if (res instanceof NumericLiteral) {
                 String normalized = XMLDatatypeUtil.normalize(res.getLabel(), res.getDatatype());
-                if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)
-                        && !normalized.equals(XMLDatatypeUtil.NEGATIVE_INFINITY)
-                        && !normalized.equals(XMLDatatypeUtil.NaN)) {
-                    writer.write(normalized);
-                    return; // done
+                switch (normalized)
+                {
+                    case XMLDatatypeUtil.POSITIVE_INFINITY:
+                    case XMLDatatypeUtil.NEGATIVE_INFINITY:
+                    case XMLDatatypeUtil.NaN:
+                          super.writeLiteral(res);
+                          break;
+                    default:
+                        writer.write(normalized);
+                        return;
                 }
-            } else {
-                super.writeLiteral(res);
             }
+            super.writeLiteral(res);
+
+        }
+
+        private void unsetNamespace(String iri) {
+            namespaceTable.remove(iri);
         }
     }
 }

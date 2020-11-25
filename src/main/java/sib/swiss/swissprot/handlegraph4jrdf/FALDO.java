@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 public class FALDO {
 
     public static final String NAMESPACE = "http://biohackathon.org/resource/faldo#";
-    public static final String PREFIX = "FALDO";
+    public static final String PREFIX = "faldo";
     private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
     /**
