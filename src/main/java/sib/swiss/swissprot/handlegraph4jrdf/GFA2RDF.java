@@ -30,7 +30,9 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.NumericLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -83,10 +85,11 @@ public class GFA2RDF implements Callable<Integer> {
         TurtleWriter tw = new PrefixedURITurtleWriter(out, baseIRI);
         tw.set(BasicWriterSettings.PRETTY_PRINT, false);
         tw.startRDF();
+        String nodePrefix;
         if (preCompress) {
             tw.handleNamespace("r", RDF.NAMESPACE);
             tw.handleNamespace("", VG.NAMESPACE);
-            tw.handleNamespace("n", base + "node/");
+            nodePrefix = "n";
             tw.handleNamespace("S", VG.Step.stringValue());
             tw.handleNamespace("N", VG.Node.stringValue());
             tw.handleNamespace("rv", RDF.VALUE.stringValue());
@@ -104,21 +107,22 @@ public class GFA2RDF implements Callable<Integer> {
         } else {
             tw.handleNamespace(RDF.PREFIX, RDF.NAMESPACE);
             tw.handleNamespace(VG.PREFIX, VG.NAMESPACE);
-            tw.handleNamespace("node", base + "node/");
+            nodePrefix = "node";
             tw.handleNamespace(FALDO.PREFIX, FALDO.NAMESPACE);
         }
+        tw.handleNamespace(nodePrefix, base + "node/");
         Iterator<String> si = s.iterator();
-        convert(si, tw);
+        convert(si, tw, nodePrefix);
 
         tw.endRDF();
     }
 
-    public void convert(Iterator<String> si, TurtleWriter tw) {
+    public void convert(Iterator<String> si, TurtleWriter tw, String nodePrefix) {
         int pathCounter = 0;
         GFA1Reader gfA1Reader = new GFA1Reader(si);
         while (gfA1Reader.hasNext()) {
             Line line = gfA1Reader.next();
-            pathCounter = convertLineToRdf(line, tw, pathCounter);
+            pathCounter = convertLineToRdf(line, tw, pathCounter, nodePrefix);
         }
     }
 
@@ -128,41 +132,56 @@ public class GFA2RDF implements Callable<Integer> {
 
     }
 
-    private int convertLineToRdf(Line line, RDFWriter tw, int pathCounter) {
+    private int convertLineToRdf(Line line, RDFWriter tw, int pathCounter, String nodePrefix) {
         switch (line.getCode()) {
             case PathLine.CODE:
-                return convertPathLineToRdf((PathLine) line, tw, pathCounter, preCompress);
+                return convertPathLineToRdf((PathLine) line, tw, pathCounter, nodePrefix);
             case SegmentLine.CODE:
-                convertSegmentLineToRdf((SegmentLine) line, tw);
+                convertSegmentLineToRdf((SegmentLine) line, tw, nodePrefix);
                 return pathCounter;
             case LinkLine.CODE:
-                convertLinkLineToRdf((LinkLine) line, tw);
+                convertLinkLineToRdf((LinkLine) line, tw, nodePrefix);
                 return pathCounter;
             default:
                 return pathCounter;
         }
     }
 
-    private int convertPathLineToRdf(PathLine pathLine, RDFWriter writer, int pathCounter, boolean preCompress) {
+    private int convertPathLineToRdf(PathLine pathLine, RDFWriter writer, int pathCounter, String nodePrefix) {
         String nameAsString = pathLine.getNameAsString();
         IRI pathIRI;
-        String pathName = Integer.toString(pathCounter);
-        if (nameAsString.startsWith("http://") || nameAsString.startsWith("ftp://") || nameAsString.startsWith("https://")) {
-            pathIRI = VF.createIRI(nameAsString);
+        String pathPrefix;
+        String pathStepPrefix;
+        String pathPositionPrefix;
+        if (preCompress) {
+            pathPrefix = "pn";
+            pathStepPrefix = "ps";
+            pathPositionPrefix = "pp";
         } else {
-            pathIRI = VF.createIRI(base + "path/", nameAsString);
-            pathName = nameAsString;
+            pathPrefix = "path";
+            pathStepPrefix = "pathstep";
+            pathPositionPrefix = "pathposition" ;
+        }
+        if (nameAsString.startsWith("http://") || nameAsString.startsWith("ftp://") || nameAsString.startsWith("https://")) {
+            pathIRI = new PrefixedIRI(pathPrefix, nameAsString, "");
+        } else {
+            pathIRI = new PrefixedIRI(pathPrefix, base + "path/", nameAsString);
         }
 
         String pathStepBase = pathIRI.stringValue() + "/step/";
         String pathPositionBase = pathIRI.stringValue() + "/position/";
-        setPathNamespaces(preCompress, writer, pathName, pathStepBase, pathIRI, pathPositionBase);
+
+        writer.handleNamespace(pathPrefix, pathIRI.stringValue());
+        writer.handleNamespace(pathStepPrefix, pathStepBase);
+        if (extra) {
+            writer.handleNamespace(pathPositionPrefix, pathPositionBase);
+        }
         writer.handleStatement(VF.createStatement(pathIRI, RDF.TYPE, VG.Path));
         Iterator<Step> steps = pathLine.steps();
         int begin = 1; // We start at position 1.
         while (steps.hasNext()) {
             Step step = steps.next();
-            writeStep(step, pathStepBase, preCompress, writer, pathIRI, begin, pathPositionBase);
+            writeStep(step, pathStepBase, writer, pathIRI, begin, pathPositionBase, nodePrefix, pathPrefix, pathStepPrefix, pathPositionPrefix);
         }
         if (writer instanceof PrefixedURITurtleWriter) {
             PrefixedURITurtleWriter tw = (PrefixedURITurtleWriter) writer;
@@ -173,25 +192,10 @@ public class GFA2RDF implements Callable<Integer> {
         return pathCounter++;
     }
 
-    void setPathNamespaces(boolean preCompress1, RDFWriter tw, String pathName, String pathStepBase, IRI pathIRI, String pathPositionBase) throws RDFHandlerException {
-        if (preCompress1) {
-            tw.handleNamespace("pn" + pathName, pathIRI.stringValue());
-            tw.handleNamespace("ps" + pathName, pathStepBase);
-            if (extra) {
-                tw.handleNamespace("pp" + pathName, pathPositionBase);
-            }
-        } else {
-            tw.handleNamespace("path" + pathName, pathStepBase);
-            if (extra) {
-                tw.handleNamespace("pathposition" + pathName, pathPositionBase);
-            }
-        }
-    }
-
-    void writeStep(Step step, String pathStepBase, boolean preCompress1, RDFWriter tw, IRI pathIRI, int begin, String pathPositionBase) throws RDFHandlerException {
+    void writeStep(Step step, String pathStepBase, RDFWriter tw, IRI pathIRI, int begin, String pathPositionBase, String nodePrefix, String pathPrefix, String pathStepPrefix, String pathPositionPrefix) throws RDFHandlerException {
         long rank = step.rank();
-        IRI stepIRI = VF.createIRI(pathStepBase, Long.toString(rank));
-        if (!preCompress1) {
+        IRI stepIRI = new PrefixedIRI(pathStepPrefix, pathStepBase, Long.toString(rank));
+        if (!preCompress) {
             tw.handleStatement(VF.createStatement(stepIRI, RDF.TYPE, VG.Step));
             tw.handleStatement(VF.createStatement(stepIRI, RDF.TYPE, FALDO.Region));
         }
@@ -201,25 +205,25 @@ public class GFA2RDF implements Callable<Integer> {
         } else {
             tw.handleStatement(VF.createStatement(stepIRI, VG.rank, VF.createLiteral(rank)));
         }
-        tw.handleStatement(VF.createStatement(stepIRI, VG.node, createNodeId(new String(step.nodeId(), US_ASCII))));
+        tw.handleStatement(VF.createStatement(stepIRI, VG.node, createNodeId(nodePrefix, new String(step.nodeId(), US_ASCII))));
         if (extra) {
-            int end = writePositions(begin, step, pathPositionBase, tw, stepIRI, preCompress1);
+            int end = writePositions(begin, step, pathPositionBase, tw, stepIRI, pathPositionPrefix);
             begin = end;
         }
     }
 
-    int writePositions(int begin, Step step, String pathPositionBase, RDFWriter tw, IRI stepIRI, boolean preCompress1) throws RDFHandlerException {
+    int writePositions(int begin, Step step, String pathPositionBase, RDFWriter tw, IRI stepIRI, String pathPositionPrefix) throws RDFHandlerException {
         int end = begin + getNodeLengthOfStep(step);
-        IRI beginIri = VF.createIRI(pathPositionBase, String.valueOf(begin));
-        IRI endIri = VF.createIRI(pathPositionBase, String.valueOf(end));
+        IRI beginIri = new PrefixedIRI(pathPositionPrefix, pathPositionBase, String.valueOf(begin));
+        IRI endIri = new PrefixedIRI(pathPositionPrefix, pathPositionBase, String.valueOf(end));
         tw.handleStatement(VF.createStatement(stepIRI, FALDO.begin, beginIri));
         tw.handleStatement(VF.createStatement(stepIRI, FALDO.end, endIri));
-        if (!preCompress1) {
+        if (!preCompress) {
             tw.handleStatement(VF.createStatement(beginIri, RDF.TYPE, FALDO.Position));
         }
         tw.handleStatement(VF.createStatement(beginIri, RDF.TYPE, FALDO.ExactPosition));
         tw.handleStatement(VF.createStatement(beginIri, FALDO.position, VF.createLiteral(begin)));
-        if (!preCompress1) {
+        if (!preCompress) {
             tw.handleStatement(VF.createStatement(endIri, RDF.TYPE, FALDO.Position));
         }
         tw.handleStatement(VF.createStatement(endIri, RDF.TYPE, FALDO.ExactPosition));
@@ -227,9 +231,9 @@ public class GFA2RDF implements Callable<Integer> {
         return end;
     }
 
-    private void convertSegmentLineToRdf(SegmentLine segmentLine, RDFWriter tw) {
+    private void convertSegmentLineToRdf(SegmentLine segmentLine, RDFWriter tw, String nodePrefix) {
         String name = segmentLine.getNameAsString();
-        IRI nodeIRI = VF.createIRI(base + "node/", name);
+        IRI nodeIRI = createNodeId(nodePrefix, name);
         tw.handleStatement(VF.createStatement(nodeIRI, RDF.TYPE, VG.Node));
         if (extra) {
             try {
@@ -242,9 +246,9 @@ public class GFA2RDF implements Callable<Integer> {
         tw.handleStatement(VF.createStatement(nodeIRI, RDF.VALUE, VF.createLiteral(segmentLine.getSequence().asString())));
     }
 
-    private void convertLinkLineToRdf(LinkLine linkLine, RDFWriter tw) {
-        IRI fromNodeIRI = createNodeId(linkLine.getFromNameAsString());
-        IRI toNodeIRI = createNodeId(linkLine.getToNameAsString());
+    private void convertLinkLineToRdf(LinkLine linkLine, RDFWriter tw, String nodePrefix) {
+        IRI fromNodeIRI = createNodeId(nodePrefix, linkLine.getFromNameAsString());
+        IRI toNodeIRI = createNodeId(nodePrefix, linkLine.getToNameAsString());
         if (linkLine.isReverseComplimentOfFrom()) {
             if (linkLine.isReverseComplimentOfTo()) {
                 tw.handleStatement(VF.createStatement(fromNodeIRI, VG.linksReverseToReverse, toNodeIRI));
@@ -260,8 +264,8 @@ public class GFA2RDF implements Callable<Integer> {
         }
     }
 
-    IRI createNodeId(String nodeId) {
-        return VF.createIRI(base + "node/", nodeId);
+    IRI createNodeId(String prefix, String nodeId) {
+        return new PrefixedIRI(prefix, base + "node/", nodeId);
     }
 
     private int getNodeLengthOfStep(Step step) {
@@ -282,26 +286,30 @@ public class GFA2RDF implements Callable<Integer> {
         @Override
         protected void writeURI(IRI res) throws IOException {
 
-            String prefix = namespaceTable.get(res.stringValue());
-            if (prefix != null) {
-                writer.write(prefix);
-                writer.write(":");
-                return;
+            if (res instanceof PrefixedIRI) {
+                PrefixedIRI pi = (PrefixedIRI) res;
+                writer.write(pi.prefix + ':' + pi.localName);
+            } else {
+                String prefix = namespaceTable.get(res.stringValue());
+                if (prefix != null) {
+                    writer.write(prefix);
+                    writer.write(":");
+                    return;
+                }
+                super.writeURI(res);
             }
-            super.writeURI(res);
         }
 
         @Override
         protected void writeLiteral(Literal res) throws IOException {
             if (res instanceof NumericLiteral) {
                 String normalized = XMLDatatypeUtil.normalize(res.getLabel(), res.getDatatype());
-                switch (normalized)
-                {
+                switch (normalized) {
                     case XMLDatatypeUtil.POSITIVE_INFINITY:
                     case XMLDatatypeUtil.NEGATIVE_INFINITY:
                     case XMLDatatypeUtil.NaN:
-                          super.writeLiteral(res);
-                          break;
+                        super.writeLiteral(res);
+                        break;
                     default:
                         writer.write(normalized);
                         return;
@@ -313,6 +321,63 @@ public class GFA2RDF implements Callable<Integer> {
 
         private void unsetNamespace(String iri) {
             namespaceTable.remove(iri);
+        }
+    }
+
+    private class PrefixedIRI extends SimpleIRI {
+
+        private final String prefix;
+        private final String namespace;
+        private final String localName;
+
+        public PrefixedIRI(String prefix, String namespace, String localName) {
+            this.prefix = prefix;
+            this.namespace = namespace;
+            this.localName = localName;
+        }
+
+        @Override
+        public String toString() {
+            return stringValue();
+        }
+
+        @Override
+        public String stringValue() {
+            return namespace + localName;
+        }
+
+        @Override
+        public String getNamespace() {
+            return namespace;
+        }
+
+        @Override
+        public String getLocalName() {
+            return localName;
+        }
+
+        // Implements IRI.equals(Object)
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+
+            if (o instanceof IRI) {
+
+                String a = toString();
+                String b = o.toString();
+
+                return a.equals(b);
+            }
+
+            return false;
+        }
+
+        // Implements IRI.hashCode()
+        @Override
+        public int hashCode() {
+            return stringValue().hashCode();
         }
     }
 }
