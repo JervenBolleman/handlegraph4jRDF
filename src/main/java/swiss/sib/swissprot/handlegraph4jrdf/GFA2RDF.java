@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package sib.swiss.swissprot.handlegraph4jrdf;
+package swiss.sib.swissprot.handlegraph4jrdf;
 
 import io.github.vgteam.handlegraph4j.gfa1.GFA1Reader;
 import io.github.vgteam.handlegraph4j.gfa1.line.Line;
@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.NumericLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.util.URIUtil;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;

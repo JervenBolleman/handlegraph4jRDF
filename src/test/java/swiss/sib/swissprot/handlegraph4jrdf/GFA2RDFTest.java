@@ -3,8 +3,9 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package sib.swiss.swissprot.handlegraph4jrdf;
+package swiss.sib.swissprot.handlegraph4jrdf;
 
+import swiss.sib.swissprot.handlegraph4jrdf.GFA2RDF;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
