@@ -109,7 +109,7 @@
     
      <distributionManagement>
         <repository>
-            <id>hg4j-rdf</id>
+            <id>github</id>
             <name>GitHub Jerven Bolleman Apache Maven Packages</name>
             <url>https://maven.pkg.github.com/JervenBolleman/handlegraph4jRDF</url>
         </repository>
