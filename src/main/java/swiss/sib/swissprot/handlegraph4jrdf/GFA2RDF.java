@@ -268,8 +268,8 @@ public class GFA2RDF implements Callable<Integer> {
     }
 
     private int getNodeLengthOfStep(Step step) {
-        if (step.nodeHasIntId()) {
-            return nodeLengthMapByIntId.get(step.nodeIntId());
+        if (step.nodeHasLongId()) {
+            return nodeLengthMapByIntId.get((int) step.nodeLongId());
         } else {
             return nodeLengthMapByByteArrayId.get(step.nodeId());
         }
