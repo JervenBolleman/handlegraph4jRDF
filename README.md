@@ -5,8 +5,12 @@ a RDF graph.
 
 To make a fat jar to run the program
 ```
-mvn assembly:assembly
+mvn package
 ```
 
-Requires local install of handlegraph4j and handlegraph4jGFA
+Then run with
 
+```
+java -jar target/handlegraph4j-rdf-0.1-jar-with-dependencies.jar 
+
+```
